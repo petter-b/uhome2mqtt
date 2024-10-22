@@ -1,5 +1,0 @@
-{
-  "name": "Uponor Uhome integration",
-  "render_readme": true,
-  "domains": ["sensor", "climate"]
-}
