@@ -308,10 +308,13 @@ class UponorBaseDevice(ABC):
         return self.properties_byname[name]
 
     def attributes(self):
-        attr = None
+        attr = ''
         for key_name, key_data in self.properties.items():
-            attr = str(attr) + str(key_name) + ': ' + str(self.properties_byname[key_name].value) + '#'
-        return attr
+            attr = attr + str(key_name) + ': ' + str(self.properties_byname[key_name].value) + '#'
+        if len(attr) > 0:
+            return attr
+        else:
+            return None
 
     async def async_update(self):
         #_LOGGER.debug("Updating %s, device '%s'", self.__class__.__name__, self.identity_string)
