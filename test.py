@@ -1,36 +1,43 @@
-from requests import RequestException
+from utils import is_valid_ip, is_valid_fqdn
 from uhome_wrapper import UponorClient, UponorThermostat
+from mqttclient import MqttConfig, MqttPubClient, get_mqtt_vars
 import logging
 import asyncio
 import signal
 import os
 import sys
+from typing import Tuple
+from requests import RequestException
+
+"""Constants."""
+MIN_UPDATE_INTERVAL: int = 15  # seconds
+DEFAULT_UPDATE_INTERVAL: int = 60  # seconds
 
 
-# Configuration from environment variables
-#UHOME_ADDR: str = os.getenv('UHOME_ADDR')
-UHOME_ADDR: str = '172.17.4.6'
-UPDATE_INTERVAL: int = int(os.getenv('UPDATE_INTERVAL', '60'))  # seconds
+def get_env_vars() -> Tuple[str, int]:
+    """Get environment variables."""
+    logger = logging.getLogger(__name__)
 
-# MQTT parameters
-MQTT_BROKER: str = os.getenv('MQTT_BROKER', 'localhost')
-MQTT_PORT: int = int(os.getenv('MQTT_PORT', '1883'))
-MQTT_USERNAME: str = os.getenv('MQTT_USERNAME', '')
-MQTT_PASSWORD: str = os.getenv('MQTT_PASSWORD', '')
-MQTT_TOPIC_PREFIX: str = os.getenv('MQTT_TOPIC_PREFIX', 'smatrix')
-MQTT_TOPIC_SUFFIX: str = os.getenv('MQTT_TOPIC_SUFFIX', 'climate')   
+    #uhome_addr = os.getenv('UHOME_ADDR')
+    uhome_addr  = '172.17.4.6'
+    if not uhome_addr:
+        logger.error("UHOME_ADDR is not set. Exiting.")
+        sys.exit(1)
 
+    if not (is_valid_ip(uhome_addr) or is_valid_fqdn(uhome_addr)):
+        logger.error("UHOME_ADDR is not a valid IP address or FQDN. Exiting.")
+        sys.exit(1)
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+    try:
+        update_interval = int(os.getenv('UPDATE_INTERVAL', DEFAULT_UPDATE_INTERVAL))  # seconds
+    except ValueError:
+        logger.warning(f"UPDATE_INTERVAL is not a valid integer. Using default {DEFAULT_UPDATE_INTERVAL} [seconds].")
+        update_interval = DEFAULT_UPDATE_INTERVAL
+    if update_interval< MIN_UPDATE_INTERVAL:
+        logger.warning(f"UPDATE_INTERVAL is less than the minimum allowed value of {MIN_UPDATE_INTERVAL} [seconds]. Using {MIN_UPDATE_INTERVAL} [seconds].")
+        update_interval = MIN_UPDATE_INTERVAL
 
-# Signal handler and global event to initiate graceful shutdown
-shutdown = asyncio.Event() 
-def signal_handler(signum) -> None:
-    """Signal handler to initiate graceful shutdown of the program."""
-    logger.info(f"Signal {signal.Signals(signum).name} received, initiating graceful shutdown...")
-    shutdown.set()
+    return uhome_addr, update_interval
 
 
 class ThermostatController():
@@ -74,6 +81,8 @@ class ThermostatController():
                 except Exception as e:
                     self._available = False
                     self._logger.error(f"Thermostat {self.identity} in {self.name} was unable to update: {e}")
+                
+                # Publish to MQTT
                 print(f"{self.thermostat.by_name('room_name').value} - temp: {self.thermostat.by_name('room_temperature').value}°C - humidity: {self.thermostat.by_name('rh_value').value}%")
 
                 self._trigger.clear() # Reset the event for the next trigger     
@@ -81,51 +90,42 @@ class ThermostatController():
             self._logger.debug(f"Control loop for thermostat {self.identity} in {self.name} was cancelled.")
             raise
 
-async def setup_uhome(uhome_addr: str) -> UponorClient | None:
-    """Establish connection to U@home module, and scan for thermostats."""
-    try:
-        uhome = UponorClient(uhome_addr)
-    except Exception as e:  # Catching all exceptions
-        logger.error(f"Error connecting to U@home: {e}")
-        return None
-    try:
-        await uhome.rescan()
-    except (ValueError, RequestException) as e:
-        logger.error(f"Error from U@home at intial scan: {e}")
-        return None
-    except asyncio.CancelledError:
-        logger.info("Setup U@home was cancelled.")
-        raise
-    return uhome
-
 
 async def main() -> None:
     """Main function."""
-    global shutdown
+    # Set up logging
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
+
+    # Signal handler and event to initiate graceful shutdown
+    shutdown = asyncio.Event() 
+
+    def signal_handler(signum) -> None:
+        """Signal handler to initiate graceful shutdown of the program."""
+        logger.info(f"Signal {signal.Signals(signum).name} received, initiating graceful shutdown...")
+        shutdown.set()
+
     # Register the signal handler
     loop = asyncio.get_running_loop()
     loop.add_signal_handler(signal.SIGTERM, lambda: signal_handler(signal.SIGTERM))
     loop.add_signal_handler(signal.SIGINT, lambda: signal_handler(signal.SIGINT))
 
-    if not UHOME_ADDR:
-        logger.error("UHOME_ADDR is not set. Exiting.")
-        sys.exit(1)
+    uhome_addr, update_interval = get_env_vars()
+    mqtt_config = get_mqtt_vars()
+
     try: 
-        uhome = await setup_uhome(UHOME_ADDR)
-        if not uhome:
-            logger.error("Failed to initialize U@home. Exiting.")   
-            sys.exit(1)
+        uhome = UponorClient(uhome_addr)
         thermostats = [ThermostatController(thermostat) for thermostat in uhome.thermostats]
         async with asyncio.TaskGroup() as tg:
             tasks = [tg.create_task(thermostat.update_publish_loop()) for thermostat in thermostats]
 
-            logger.info(f"Starting data collection. Publishing every {UPDATE_INTERVAL} seconds.")
+            logger.info(f"Starting data collection. Publishing every {update_interval} seconds.")
             while not shutdown.is_set():
                 for thermostat in thermostats:
                     thermostat.trigger() 
                 try: 
                     # Wait for either the sleep to complete or the event to be set
-                    await asyncio.wait_for(asyncio.create_task(shutdown.wait()), timeout=UPDATE_INTERVAL)
+                    await asyncio.wait_for(asyncio.create_task(shutdown.wait()), timeout=update_interval)
                 except asyncio.TimeoutError:
                     # Check if each thermostant has completed the update and publish loop
                     for thermostat in thermostats:
