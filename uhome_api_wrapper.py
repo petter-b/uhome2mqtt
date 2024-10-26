@@ -23,12 +23,12 @@ class UponorClient(BaseUponorClient):
 
     async def do_rest_call(self, requestObject):
         data = json.dumps(requestObject)
-        self._logger.debug(f"Request payload: {data}")
+        self._logger.debug(f"Request payload: {json.dumps(requestObject, indent=2)}")
 
         response = None
         try:
             async with httpx.AsyncClient() as client:
-                self._logger.debug(f"POST {self.server_uri} with data: {data}")
+                self._logger.debug(f"POST {self.server_uri}")
                 response = await client.post(self.server_uri, data=data)
         except httpx.RequestError as ex:
             self._logger.error(f"API call error: {ex}", exc_info=True)
