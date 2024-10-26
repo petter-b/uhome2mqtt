@@ -15,7 +15,7 @@ class UponorClient(BaseUponorClient):
             asyncio.create_task(self.rescan())
         except (ValueError, RequestException) as e:
             self._logger.error(f"Error from U@home at initial scan: {e}")
-            self.uhome = None
+            raise UponorAPIException("Error from U@home at initial scan", e)
         except asyncio.CancelledError:
             self._logger.info("Setup U@home was cancelled.")
             raise

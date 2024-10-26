@@ -18,6 +18,11 @@ def is_valid_fqdn(hostname: str) -> bool:
     )
     return re.match(fqdn_regex, hostname) is not None
 
+def is_valid_hostname(hostname: str) -> bool:
+    """Check if a string is a valid hostname."""
+    if hostname == "localhost":
+        return True
+    return is_valid_fqdn(hostname)
 
 def is_valid_mqtt_topic(topic: str) -> bool:
     """Check if a string is a valid MQTT topic."""

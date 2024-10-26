@@ -1,6 +1,7 @@
-from utils import is_valid_ip, is_valid_fqdn, is_valid_mqtt_topic
+from utils import is_valid_ip, is_valid_hostname, is_valid_mqtt_topic
 import logging
 import os
+import asyncio
 import paho.mqtt.client as mqtt
 
 
@@ -13,25 +14,37 @@ DEFAULT_TOPIC_SUFFIX: str = 'climate'
 
 class MqttConfig:
     """MQTT configuration."""
-    def __init__(self, broker: str, port: int, username: str | None, password: str | None, topic_prefix: str, topic_suffix: str) -> None:
+    def __init__(self, broker: str, port: int, username: str | None, password: str | None, keep_alive: int | None = None) -> None:
         self.broker = broker
         self.port = port
         self.username = username
         self.password = password
-        self.topic_prefix = topic_prefix
-        self.topic_suffix = topic_suffix
+        self.keep_alive = keep_alive
 
     def __str__(self) -> str:
-        return f"MQTT broker: {self.broker}, port: {self.port}, username: {self.username}, password: {self.password}, topic prefix: {self.topic_prefix}, topic suffix: {self.topic_suffix}"
+        return f"MQTT broker: {self.broker}, port: {self.port}, username: {self.username}, password: {self.password}, keep alive: {self.keep_alive}"
 
 
-class MqttPubClient:
+class MqttPubClient(mqtt.Client):
     """MQTT publisher client."""
-    def __init__(self, broker_address: str, broker_port: int = 1883, username: str | None = None, password: str | None = None) -> None:
+    def __init__(self, config: MqttConfig) -> None:
+        super().__init(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         self._logger = logging.getLogger(self.__class__.__name__)
-        self._client = mqtt.Client()
-        if username is not None:
-            self._client.username_pw_set(username, password)
+        #self._client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION_2)
+        self.topic_prefix = config.topic_prefix
+        self.topoc_suffix = config.topic_suffix
+        if config.username is not None:
+            self.username_pw_set(config.username, config.password)
+        self.connected = asyncio.Event()
+        try: 
+            self.connect_async(config.broker, config.port, keepalive=config.keep_alive)
+            self.loop_start()
+        except mqtt.MQTTException as e:
+            self._logger.error(f"Error connecting to MQTT broker: {e}")
+            raise
+        except Exception as e:
+            self._logger.error(f"Unexpected exception occurred: {e}")
+            raise
 
     
     def on_connect(self, client, userdata, flags, rc) -> None:
@@ -42,25 +55,11 @@ class MqttPubClient:
 
 
     def on_disconnect(self, client, userdata, rc):
-        self.connected = False
+        self.connected.clear()
         if rc != 0:
             logging.warning("Unexpected disconnection. Attempting to reconnect...")
         else:
             logging.info("Disconnected from MQTT broker")
-
-
-    def connect_with_retry(self):
-        retry_delay = RECONNECT_DELAY_MIN
-        while not self.connected:
-            try:
-                self.client.connect(BROKER_ADDRESS, PORT)
-                self.client.loop_start()
-                return
-            except Exception as e:
-                logging.error(f"Connection failed: {e}")
-                time.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, RECONNECT_DELAY_MAX)
-                retry_delay += uniform(0, 1)  # Add jitter
 
 
     def publish_message(self, message):
@@ -88,8 +87,8 @@ def get_mqtt_vars() -> MqttConfig | None:
     logger = logging.getLogger(__name__)
 
     mqtt_broker = os.getenv('MQTT_BROKER', DEFAULT_MQTT_BROKER)
-    if not (is_valid_ip(mqtt_broker) or is_valid_fqdn(mqtt_broker)):
-        logger.error("MQTT_BROKER is not a valid IP address or FQDN. Exiting.")
+    if not (is_valid_ip(mqtt_broker) or is_valid_hostname(mqtt_broker)):
+        logger.error("MQTT_BROKER is not a valid IP address or hostname/FQDN.")
         return None
 
     try:
@@ -111,9 +110,11 @@ def get_mqtt_vars() -> MqttConfig | None:
         mqtt_topic_prefix = DEFAULT_TOPIC_PREFIX
     
     mqtt_topic_suffix = os.getenv('MQTT_TOPIC_SUFFIX', DEFAULT_TOPIC_SUFFIX)
-    if not is_valid_mqtt_topic(mqtt_topic_suffix):
+    if len(mqtt_topic_suffix) == 0:
+        mqtt_topic_suffix = None
+    elif not is_valid_mqtt_topic(mqtt_topic_suffix):
         logger.warning(f"Invalid MQTT topic prefix or suffix. Using default ({DEFAULT_TOPIC_SUFFIX}).")
         mqtt_topic_suffix = DEFAULT_TOPIC_SUFFIX
 
-    return MqttConfig(mqtt_broker, mqtt_port, mqtt_username, mqtt_password, mqtt_topic_prefix, mqtt_topic_suffix)
+    return MqttConfig(mqtt_broker, mqtt_port, mqtt_username, mqtt_password), mqtt_topic_prefix, mqtt_topic_suffix
 
