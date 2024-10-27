@@ -1,6 +1,6 @@
-from utils import is_valid_ip, is_valid_hostname
-from uhome_api_wrapper import UponorClient, UponorThermostat
-from mqttclient import MqttConfig, MqttPubClient, get_mqtt_vars
+from .utils import is_valid_ip, is_valid_hostname
+from .uhome_api_wrapper import UponorClient, UponorThermostat
+from .mqttclient import MqttConfig, MqttPubClient, get_mqtt_vars
 import logging
 import asyncio
 import signal
@@ -125,7 +125,10 @@ class ThermostatController():
 async def main() -> None:
     """Main function."""
     # Set up logging
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(filename)s - %(message)s')
+    logging.basicConfig(
+        level=logging.DEBUG, 
+        format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s - %(message)s'
+        )
 #    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     logger = logging.getLogger(__name__)
  #   logging.getLogger('httpx').setLevel(logging.WARNING) # Set the logging level for HTTP-related loggers to WARNING

@@ -1,4 +1,4 @@
-from utils import is_valid_ip, is_valid_hostname, is_valid_mqtt_topic
+from .utils import is_valid_ip, is_valid_hostname, is_valid_mqtt_topic
 import logging
 import os
 import asyncio
@@ -28,11 +28,11 @@ class MqttConfig:
 class MqttPubClient(mqtt.Client):
     """MQTT publisher client."""
     def __init__(self, config: MqttConfig) -> None:
-        super().__init(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+        super().__init__(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         self._logger = logging.getLogger(self.__class__.__name__)
         #self._client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION_2)
         self.topic_prefix = config.topic_prefix
-        self.topoc_suffix = config.topic_suffix
+        self.topic_suffix = config.topic_suffix
         if config.username is not None:
             self.username_pw_set(config.username, config.password)
         self.connected = asyncio.Event()
