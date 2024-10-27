@@ -29,7 +29,7 @@ class UponorClient(BaseUponorClient):
         try:
             async with httpx.AsyncClient() as client:
                 self._logger.debug(f"POST {self.server_uri}")
-                response = await client.post(self.server_uri, data=data)
+                response = await client.post(self.server_uri, data=data, timeout=10.0)
         except httpx.RequestError as ex:
             self._logger.error(f"API call error: {ex}", exc_info=True)
             raise UponorAPIException("API call error", ex)

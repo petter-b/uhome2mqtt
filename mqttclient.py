@@ -32,7 +32,7 @@ class MqttPubClient():
         self._logger = logging.getLogger(self.__class__.__name__)
         self._mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION_2)
         if config.username is not None:
-            self._client.username_pw_set(config.username, config.password)
+            self._mqttc.username_pw_set(config.username, config.password)
         self.connected = asyncio.Event()
         try: 
             self._mqttc.connect_async(config.broker, config.port, keepalive=config.keep_alive)
@@ -48,16 +48,19 @@ class MqttPubClient():
 
     @self._mqttc.connect_callback()
     def on_connect(self, client, userdata, flags, rc) -> None:
-        if rc == 0:
-            self.connected.set()
-            self._logger.info("Connected to MQTT broker")
-        elif rc == 3: # Server unavailable.
-            self._logger.error(f"Connection refused - server unavailable")
-            self._logger.debug(f"Return code details: {repr(rc)}")
-        else: # Unrecoverable error
-            self._logger.error(f"Connection refused - return code: {str(rc)}")
-            self._logger.debug(f"Return code details: {repr(rc)}")
-            raise mqtt.MQTTException(f"Connection refused - return code: {str(rc)}")
+        try:
+            if rc == 0:
+                self.connected.set()
+                self._logger.info("Connected to MQTT broker")
+            elif rc == 3: # Server unavailable.
+                self._logger.error(f"Connection refused - server unavailable")
+                self._logger.debug(f"Return code details: {repr(rc)}")
+            else: # Unrecoverable error
+                self._logger.error(f"Connection refused - return code: {str(rc)}")
+                self._logger.debug(f"Return code details: {repr(rc)}")
+                raise mqtt.MQTTException(f"Connection refused - return code: {str(rc)}")
+        except Exception as e:
+            self._logger.error(f"Error in on_connect callback: {str(e)}")
 
 
     @self._mqttc.disconnect_callback()

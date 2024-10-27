@@ -51,7 +51,7 @@ class ThermostatController():
     """
     Thermostat controller that utilizes Uponor U@Home API to interact with U@Home.
     """
-    def __init__(self, thermostat: UponorThermostat, mqtt_topic_prefix: str, mqtt_topic_suffix: Optional[str], mqttc: Optional[MqttPubClient]) -> None:
+    def __init__(self, thermostat: UponorThermostat, mqttc: MqttPubClient, mqtt_topic_prefix: str, mqtt_topic_suffix: Optional[str]) -> None:
         self._logger = logging.getLogger(self.__class__.__name__)
         self._logger.setLevel(logging.DEBUG)
         self._logger.debug("Initializing ThermostatController...")
@@ -89,8 +89,8 @@ class ThermostatController():
             while True:
                 await self._trigger.wait()
                 # Skip API calls to Uhome if not connected to MQTT broker
-                if True: #self.mqttc.connected.is_set():
-#                    await asyncio.sleep(random.uniform(0, 1))  # Introduce a random delay to avoid synchronization
+                if self.mqttc.connected.is_set():
+                    await asyncio.sleep(random.uniform(0, 1))  # Introduce a random delay to avoid synchronization
                     # Update thermostat
                     try:
                         await self.thermostat.async_update()
@@ -110,8 +110,8 @@ class ThermostatController():
                             data[output_key] = value
                     data['time'] = self.thermostat.last_update(timezone.utc).isoformat() # Add timestamp in ISO 8601 format
                     # Publish to MQTT
-                    #self.mqttc.publish(self.pub_topic, self.thermostat.get_data(), qos=0)
-                    print(json.dumps(data, indent=2))
+                    self._logger.debug(f"Publishing to {self.pub_topic}: {json.dumps(data, indent=2)}")
+                    self.mqttc.publish(self.pub_topic, json.dumbs(data))
                 self._trigger.clear() # Reset the event for the next trigger     
         except asyncio.CancelledError:
             self._logger.debug(f"Control loop for thermostat {self.identity} in {self.name} was cancelled.")
