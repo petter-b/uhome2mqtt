@@ -13,16 +13,15 @@ from requests import RequestException
 from datetime import timezone
 
 """Constants."""
-MIN_UPDATE_INTERVAL: int = 15  # seconds
-DEFAULT_UPDATE_INTERVAL: int = 60  # seconds
+MIN_UPDATE_INTERVAL: Final[int] = 15  # seconds
+DEFAULT_UPDATE_INTERVAL: Final[int] = 60  # seconds
 
 
 def get_env_vars() -> Tuple[str, int]:
     """Get environment variables."""
     logger = logging.getLogger(__name__)
 
-    #uhome_addr = os.getenv('UHOME_ADDR')
-    uhome_addr  = '172.17.4.6'
+    uhome_addr = os.getenv('UHOME_ADDR')
     if not uhome_addr:
         logger.error("UHOME_ADDR is not set. Exiting.")
         sys.exit(1)
@@ -33,8 +32,8 @@ def get_env_vars() -> Tuple[str, int]:
 
     try:
         update_interval = int(os.getenv('UPDATE_INTERVAL', DEFAULT_UPDATE_INTERVAL))  # seconds
-    except ValueError:
-        logger.warning(f"UPDATE_INTERVAL is not a valid integer. Using default {DEFAULT_UPDATE_INTERVAL} [seconds].")
+    except (ValueError, TypeError) as e:
+        logger.warning(f"UPDATE_INTERVAL error {e}. Using default {DEFAULT_UPDATE_INTERVAL} [seconds].")
         update_interval = DEFAULT_UPDATE_INTERVAL
     if update_interval< MIN_UPDATE_INTERVAL:
         logger.warning(f"UPDATE_INTERVAL is less than the minimum allowed value of {MIN_UPDATE_INTERVAL} [seconds]. Using {MIN_UPDATE_INTERVAL} [seconds].")
@@ -46,7 +45,6 @@ def get_env_vars() -> Tuple[str, int]:
 class ThermostatController():
     """
     Thermostat controller that utilizes Uponor U@Home API to interact with U@Home.
-
     """
     def __init__(self, thermostat: UponorThermostat) -> None:
 #    def __init__(self, thermostat: UponorThermostat, mqtt_topic_prefix: str, mqtt_topic_suffix: str | None, mqttc: MqttPubClient | None) -> None:

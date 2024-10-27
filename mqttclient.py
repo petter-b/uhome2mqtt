@@ -93,8 +93,8 @@ def get_mqtt_vars() -> MqttConfig | None:
 
     try:
         mqtt_port = int(os.getenv('MQTT_PORT', DEFAULT_MQTT_PORT))
-    except ValueError:
-        logger.warning(f"MQTT_PORT is not a valid integer. Using default ({DEFAULT_MQTT_PORT}).")
+    except (ValueError, TypeError) as e:
+        logger.warning(f"MQTT_PORT error: {e}. Using default ({DEFAULT_MQTT_PORT}).")
         mqtt_port = DEFAULT_MQTT_PORT
 
     mqtt_username = os.getenv('MQTT_USERNAME', '')  

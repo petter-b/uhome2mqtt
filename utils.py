@@ -3,7 +3,9 @@ import re
 
 
 def is_valid_ip(address: str) -> bool:
-    """Check if a string is a valid IP address."""
+    """
+    Check if a string is a valid IP address.
+    """
     try:
         ipaddress.ip_address(address)
         return True
@@ -12,14 +14,26 @@ def is_valid_ip(address: str) -> bool:
 
 
 def is_valid_fqdn(hostname: str) -> bool:
-    """Check if a string is a valid fully-qualified domain name."""
+    """
+    Check if a string is a valid fully-qualified domain name.
+    Args:
+        hostname: The hostname string to validate
+    Returns:
+        bool: True if hostname is valid, False otherwise
+    """
     fqdn_regex = (
         r'^(?=.{1,253}$)((?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,63}$'
     )
     return re.match(fqdn_regex, hostname) is not None
 
 def is_valid_hostname(hostname: str) -> bool:
-    """Check if a string is a valid hostname."""
+    """
+    Check if a string is a valid hostname.
+    Args:
+        hostname: The hostname string to validate
+    Returns:
+        bool: True if hostname is valid, False otherwise
+    """
     if hostname == "localhost":
         return True
     return is_valid_fqdn(hostname)
