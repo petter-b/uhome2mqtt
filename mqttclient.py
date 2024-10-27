@@ -1,4 +1,5 @@
 from .utils import is_valid_ip, is_valid_hostname, is_valid_mqtt_topic
+from typing import Final
 import logging
 import os
 import asyncio
@@ -6,10 +7,10 @@ import paho.mqtt.client as mqtt
 
 
 """Constants."""
-DEFAULT_MQTT_BROKER: str = 'localhost'
-DEFAULT_MQTT_PORT: int = 1883
-DEFAULT_TOPIC_PREFIX: str = 'smatrix'
-DEFAULT_TOPIC_SUFFIX: str = 'climate'
+DEFAULT_MQTT_BROKER: Final[str] = 'localhost'
+DEFAULT_MQTT_PORT: Final[int] = 1883
+DEFAULT_TOPIC_PREFIX: Final[str] = 'smatrix'
+DEFAULT_TOPIC_SUFFIX: Final[str] = 'climate'
 
 
 class MqttConfig:
@@ -25,60 +26,62 @@ class MqttConfig:
         return f"MQTT broker: {self.broker}, port: {self.port}, username: {self.username}, password: {self.password}, keep alive: {self.keep_alive}"
 
 
-class MqttPubClient(mqtt.Client):
+class MqttPubClient():
     """MQTT publisher client."""
     def __init__(self, config: MqttConfig) -> None:
-        super().__init__(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         self._logger = logging.getLogger(self.__class__.__name__)
-        #self._client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION_2)
-        self.topic_prefix = config.topic_prefix
-        self.topic_suffix = config.topic_suffix
+        self._mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION_2)
         if config.username is not None:
-            self.username_pw_set(config.username, config.password)
+            self._client.username_pw_set(config.username, config.password)
         self.connected = asyncio.Event()
         try: 
-            self.connect_async(config.broker, config.port, keepalive=config.keep_alive)
-            self.loop_start()
+            self._mqttc.connect_async(config.broker, config.port, keepalive=config.keep_alive)
+            self._mqttc.loop_start()
         except mqtt.MQTTException as e:
-            self._logger.error(f"Error connecting to MQTT broker: {e}")
+            self._logger.error(f"Error connecting to MQTT broker: {str(e)}")
+            self._logger.debug(f"Error details: {repr(e)}")
             raise
         except Exception as e:
-            self._logger.error(f"Unexpected exception occurred: {e}")
+            self._logger.error(f"Unexpected exception occurred: {str(e)}")
+            self._logger.debug(f"Error details: {repr(e)}")
             raise
 
-    
+    @self._mqttc.connect_callback()
     def on_connect(self, client, userdata, flags, rc) -> None:
         if rc == 0:
+            self.connected.set()
             self._logger.info("Connected to MQTT broker")
-        else:
-            self._logger.error(f"Failed to connect, return code: {rc}")
+        elif rc == 3: # Server unavailable.
+            self._logger.error(f"Connection refused - server unavailable")
+            self._logger.debug(f"Return code details: {repr(rc)}")
+        else: # Unrecoverable error
+            self._logger.error(f"Connection refused - return code: {str(rc)}")
+            self._logger.debug(f"Return code details: {repr(rc)}")
+            raise mqtt.MQTTException(f"Connection refused - return code: {str(rc)}")
 
 
-    def on_disconnect(self, client, userdata, rc):
+    @self._mqttc.disconnect_callback()
+    def on_disconnect(self, client, userdata, rc) -> None:
         self.connected.clear()
         if rc != 0:
-            logging.warning("Unexpected disconnection. Attempting to reconnect...")
+            self._logger.warning("Unexpected disconnection from MQTT broker. Attempting to reconnect...")
+            self._logger.debug(f"Return code details: {repr(rc)}")
         else:
-            logging.info("Disconnected from MQTT broker")
+            self._logger.info("Disconnected from MQTT broker")
 
 
-    def publish_message(self, message):
-        try:
-            if not self.connected:
-                self._logger.warning("Not connected. Attempting to reconnect...")
-                self.connect_with_retry()
+    def publish(self, topic: str, message: str) -> None:
+        if self.connected.is_set():
+            try:
+                self._mqttc.publish(topic, message)
+            except Exception as e:
+                self._logger.error(f"Unexpected exception occurred: {str(e)}")
+                self._logger.debug(f"Error details: {repr(e)}")
 
-            result = self.client.publish(TOPIC, message, qos=1)  # Set QoS level
-            if result.rc != mqtt.MQTT_ERR_SUCCESS:
-                self._logger.error(f"Failed to publish message: {mqtt.error_string(result.rc)}")
-            else:
-                self._logger.info(f"Message published: {message}")
-        except Exception as e:
-            self._logger.error(f"Error publishing message: {e}")
 
     def disconnect(self):
-        self.client.disconnect()
-        self.client.loop_stop()
+        self._mqttc.disconnect()
+        self._mqttc.loop_stop()
         self._logger.info("MQTT client disconnected")
 
 

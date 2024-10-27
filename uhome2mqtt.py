@@ -8,7 +8,7 @@ import os
 import sys
 import random
 import json
-from typing import Tuple
+from typing import Tuple, Final, Optional
 from requests import RequestException
 from datetime import timezone
 
@@ -16,6 +16,11 @@ from datetime import timezone
 MIN_UPDATE_INTERVAL: Final[int] = 15  # seconds
 DEFAULT_UPDATE_INTERVAL: Final[int] = 60  # seconds
 
+key_mapping = {
+    'rh_value': 'humidity',
+    'room_temperature': 'temperature',
+    'room_setpoint': 'tempsetpoint'
+}
 
 def get_env_vars() -> Tuple[str, int]:
     """Get environment variables."""
@@ -46,10 +51,7 @@ class ThermostatController():
     """
     Thermostat controller that utilizes Uponor U@Home API to interact with U@Home.
     """
-    def __init__(self, thermostat: UponorThermostat) -> None:
-#    def __init__(self, thermostat: UponorThermostat, mqtt_topic_prefix: str, mqtt_topic_suffix: str | None, mqttc: MqttPubClient | None) -> None:
-        mqtt_topic_prefix = 'uhome'
-        mqtt_topic_suffix = 'thermostat'
+    def __init__(self, thermostat: UponorThermostat, mqtt_topic_prefix: str, mqtt_topic_suffix: Optional[str], mqttc: Optional[MqttPubClient]) -> None:
         self._logger = logging.getLogger(self.__class__.__name__)
         self._logger.setLevel(logging.DEBUG)
         self._logger.debug("Initializing ThermostatController...")
@@ -64,7 +66,8 @@ class ThermostatController():
             self.mqttc = mqttc
             self._logger.debug(f"Thermostat {self.identity} / {self.name} initialized with MQTT topic: {self.pub_topic}.")
         except Exception as e:
-            self._logger.error(f"Error initializing ThermostatController: {e}")
+            self._logger.error(f"Error initializing ThermostatController: {str(e)}")
+            self._logger.debug(f"Error details: {repr(e)}")
             raise
 
     def trigger(self) -> None: 
@@ -80,11 +83,7 @@ class ThermostatController():
 
     async def update_publish_loop(self) -> None:
         """Update thermostat data and publish to MQTT."""
-        key_mapping = {
-            'rh_value': 'humidity',
-            'room_temperature': 'temperature',
-            'room_setpoint': 'tempsetpoint'
-        }
+        global key_mapping
         self._logger.debug(f"Starting control loop for thermostat {self.identity} / {self.name}.")
         try:
             while True:
@@ -155,12 +154,12 @@ async def main() -> None:
         mqtt_config.keep_alive = update_interval + 5  
     try: 
         uhome = UponorClient(uhome_addr)
-        mqttc = None #MqttPubClient(mqtt_config)
+        mqttc = MqttPubClient(mqtt_config)
         logger.debug(f"Discovered {len(uhome.thermostats)} thermostats.")
         if len(uhome.thermostats) == 0:
             logger.error("No thermostats discovered. Exiting.")
             sys.exit(1)
-        thermostats = [ThermostatController(thermostat) for thermostat in uhome.thermostats]
+        thermostats = [ThermostatController(thermostat, mqtt_topic_prefix, mqtt_topic_suffix) for thermostat in uhome.thermostats]
         async with asyncio.TaskGroup() as tg:
             tasks = [tg.create_task(thermostat.update_publish_loop()) for thermostat in thermostats]
             logger.info(f"Starting data collection. Publishing every {update_interval} seconds.")
